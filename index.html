@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>시시포스 시뮬레이터 (Sisyphus Simulator)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Press+Start+2P&display=swap');
+        
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1a1a1a;
+            overflow: hidden;
+            font-family: 'Gowun Dodum', sans-serif;
+            touch-action: none;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .menu-box {
+            background: rgba(20, 20, 25, 0.95);
+            border: 4px solid #4a4a4a;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7), inset 0 0 20px rgba(0,0,0,0.5);
+            pointer-events: auto;
+            border-radius: 16px;
+        }
+
+        .btn {
+            transition: all 0.2s ease;
+            text-shadow: 1px 1px 2px black;
+        }
+        
+        .btn:hover {
+            transform: scale(1.05);
+            filter: brightness(1.2);
+        }
+        
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Mobile Controls */
+        #mobile-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            width: 100%;
+            height: 150px;
+            pointer-events: none;
+            display: none;
+            z-index: 50;
+        }
+        
+        @media (max-width: 768px) {
+            #mobile-controls { display: flex; justify-content: space-between; padding: 0 20px; }
+        }
+
+        .d-pad, .action-btns { pointer-events: auto; display: flex; }
+        .d-pad { position: relative; width: 120px; height: 120px; margin-top: 15px;}
+        .d-btn { 
+            position: absolute; width: 40px; height: 40px; background: rgba(255,255,255,0.2); 
+            border-radius: 8px; border: 2px solid rgba(255,255,255,0.4);
+            display: flex; justify-content: center; align-items: center; color: white; font-weight: bold;
+            user-select: none;
+        }
+        .d-btn:active { background: rgba(255,255,255,0.5); }
+        .d-up { top: 0; left: 40px; }
+        .d-down { bottom: 0; left: 40px; }
+        .d-left { top: 40px; left: 0; }
+        .d-right { top: 40px; right: 0; }
+
+        .action-btns { align-items: flex-end; gap: 10px; margin-bottom: 10px;}
+        .a-btn { 
+            width: 60px; height: 60px; border-radius: 50%; background: rgba(255,100,100,0.3);
+            border: 2px solid rgba(255,100,100,0.6); display: flex; justify-content: center; align-items: center;
+            color: white; font-weight: bold; font-size: 1.2rem; user-select: none; pointer-events: auto;
+        }
+        .a-btn.space-btn { background: rgba(100,200,255,0.3); border-color: rgba(100,200,255,0.6); width: 70px; height: 70px; }
+        .a-btn:active { filter: brightness(1.5); }
+        
+        .title-text { font-family: 'Press Start 2P', cursive; letter-spacing: 2px;}
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        
+        <!-- Main Menu -->
+        <div id="main-menu" class="menu-box p-8 flex flex-col items-center max-w-md w-full mx-4 text-white">
+            <h1 class="title-text text-3xl md:text-4xl text-center text-orange-400 mb-2">시시포스</h1>
+            <h2 class="text-xl text-gray-400 mb-8 font-bold">SIMULATOR</h2>
+            
+            <p class="text-sm text-gray-300 text-center mb-6 px-4">
+                방향키: 이동<br>
+                SPACE: 돌 잡기 (아래에서 잡으면 안정적)<br>
+                Z: 돌 치기 (쿨타임 있음)
+            </p>
+            
+            <div class="w-full flex flex-col gap-3">
+                <button onclick="startGame('CHALLENGE', 300)" class="btn bg-green-600 py-3 rounded-lg font-bold text-lg">챌린지: 쉬움 (300m)</button>
+                <button onclick="startGame('CHALLENGE', 800)" class="btn bg-yellow-600 py-3 rounded-lg font-bold text-lg">챌린지: 보통 (800m)</button>
+                <button onclick="startGame('CHALLENGE', 1200)" class="btn bg-red-600 py-3 rounded-lg font-bold text-lg">챌린지: 어려움 (1200m)</button>
+                <div class="h-2 border-b border-gray-600 w-1/2 mx-auto my-2"></div>
+                <button onclick="startGame('ENDLESS', 0)" class="btn bg-purple-600 py-3 rounded-lg font-bold text-lg">무한 모드</button>
+            </div>
+        </div>
+
+        <!-- In-Game HUD -->
+        <div id="hud" class="hidden absolute top-0 left-0 w-full p-4 flex justify-between items-start pointer-events-none">
+            <div class="bg-black/50 px-4 py-2 rounded-lg border border-gray-600 text-white font-bold backdrop-blur-sm">
+                <div class="text-xs text-gray-300">현재 높이</div>
+                <div id="hud-score" class="text-2xl text-orange-400">0m</div>
+            </div>
+            <div class="flex flex-col items-end gap-2 text-white font-bold">
+                <div class="bg-black/50 px-4 py-2 rounded-lg border border-gray-600 text-right backdrop-blur-sm">
+                    <div class="text-xs text-gray-300" id="hud-target-label">목표 높이</div>
+                    <div id="hud-target" class="text-xl text-yellow-400">300m</div>
+                </div>
+                <div id="attack-cd-ui" class="bg-black/70 px-3 py-1 rounded border border-blue-500 text-blue-400 text-sm hidden">
+                    Z 장전 완료!
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Over / Victory Menu -->
+        <div id="end-menu" class="hidden menu-box p-8 flex flex-col items-center max-w-sm w-full mx-4 text-white">
+            <h1 id="end-title" class="title-text text-3xl mb-4 text-red-500">GAME OVER</h1>
+            <p id="end-desc" class="text-xl mb-6 text-center">돌을 놓치고 말았습니다...</p>
+            <div class="text-2xl mb-8 font-bold text-yellow-400">도달: <span id="end-score">0</span>m</div>
+            
+            <div class="w-full flex gap-3">
+                <button onclick="returnToMenu()" class="btn bg-gray-600 py-3 flex-1 rounded-lg font-bold text-lg">메뉴로</button>
+                <button onclick="retryGame()" class="btn bg-blue-600 py-3 flex-1 rounded-lg font-bold text-lg">다시하기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Controls Overlay -->
+    <div id="mobile-controls">
+        <div class="d-pad">
+            <div class="d-btn d-up" id="btn-up">▲</div>
+            <div class="d-btn d-left" id="btn-left">◀</div>
+            <div class="d-btn d-right" id="btn-right">▶</div>
+            <div class="d-btn d-down" id="btn-down">▼</div>
+        </div>
+        <div class="action-btns">
+            <div class="a-btn" id="btn-z">Z</div>
+            <div class="a-btn space-btn" id="btn-space">GRAB</div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // UI Elements
+        const uiMainMenu = document.getElementById('main-menu');
+        const uiHud = document.getElementById('hud');
+        const uiEndMenu = document.getElementById('end-menu');
+        const hudScore = document.getElementById('hud-score');
+        const hudTargetLabel = document.getElementById('hud-target-label');
+        const hudTarget = document.getElementById('hud-target');
+        const attackCdUi = document.getElementById('attack-cd-ui');
+        
+        // Game Settings
+        const PIXELS_PER_METER = 25; // 1m당 요구 픽셀 증가 (거리를 더 늘림)
+        const GRAVITY = 0.12; // 중력 감소 (처음엔 느리게)
+        const MAX_FALL_SPEED = 22; // 최대 가속 속도 증가 (점점 빠르게)
+        const TRACK_WIDTH = 500;
+        
+        // State
+        let gameState = 'MENU'; // MENU, PLAYING, GAMEOVER, VICTORY
+        let currentMode = 'CHALLENGE';
+        let targetHeight = 300;
+        let score = 0;
+        let cameraY = 0;
+        let lastTime = 0;
+        let animationId;
+        
+        let obstacles = []; // 장애물 배열
+        let nextSpawnY = 0; // 다음 장애물 생성 Y좌표
+        
+        // Input tracking
+        const keys = {
+            ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
+            Space: false, z: false
+        };
+
+        // Resize Canvas
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') keys.Space = true;
+            if (e.key === 'z' || e.key === 'Z') keys.z = true;
+            if (keys.hasOwnProperty(e.code)) keys[e.code] = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'Space') keys.Space = false;
+            if (e.key === 'z' || e.key === 'Z') keys.z = false;
+            if (keys.hasOwnProperty(e.code)) keys[e.code] = false;
+        });
+
+        // Touch Control Bindings
+        function bindTouch(btnId, keyName) {
+            const btn = document.getElementById(btnId);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; });
+            // Handle finger slide off
+            btn.addEventListener('touchcancel', (e) => { e.preventDefault(); keys[keyName] = false; });
+        }
+        bindTouch('btn-up', 'ArrowUp');
+        bindTouch('btn-down', 'ArrowDown');
+        bindTouch('btn-left', 'ArrowLeft');
+        bindTouch('btn-right', 'ArrowRight');
+        bindTouch('btn-space', 'Space');
+        bindTouch('btn-z', 'z');
+
+        let particles = [];
+        class Particle {
+            constructor(x, y, vx, vy, color, life, size) {
+                this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+                this.color = color; this.life = life; this.maxLife = life;
+                this.size = size;
+            }
+            update() {
+                this.x += this.vx; this.y += this.vy;
+                this.life--;
+            }
+            draw(ctx, camY) {
+                ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y - camY, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function createParticles(x, y, count, color, speed) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const v = Math.random() * speed;
+                particles.push(new Particle(
+                    x, y, Math.cos(angle)*v, Math.sin(angle)*v,
+                    color, 20 + Math.random()*20, Math.random()*4 + 2
+                ));
+            }
+        }
+
+        // 원(캐릭터/돌)과 직사각형(장애물) 충돌 처리
+        function resolveCircleAABB(cx, cy, r, rectX, rectY, rectW, rectH) {
+            let testX = Math.max(rectX, Math.min(cx, rectX + rectW));
+            let testY = Math.max(rectY, Math.min(cy, rectY + rectH));
+            let distX = cx - testX;
+            let distY = cy - testY;
+            let dist = Math.sqrt(distX*distX + distY*distY);
+            if (dist < r) {
+                let overlap = r - dist;
+                let nx = dist === 0 ? 0 : distX / dist;
+                let ny = dist === 0 ? -1 : distY / dist;
+                return { hit: true, dx: nx * overlap, dy: ny * overlap };
+            }
+            return { hit: false };
+        }
+
+        // 원과 회전하는 직사각형(회전판) 충돌 처리
+        function resolveCircleOBB(cx, cy, r, obbX, obbY, obbW, obbH, angle) {
+            let lx = cx - obbX;
+            let ly = cy - obbY;
+            let cos = Math.cos(-angle);
+            let sin = Math.sin(-angle);
+            let rx = lx * cos - ly * sin;
+            let ry = lx * sin + ly * cos;
+            
+            let res = resolveCircleAABB(rx, ry, r, -obbW/2, -obbH/2, obbW, obbH);
+            if (res.hit) {
+                let cosB = Math.cos(angle);
+                let sinB = Math.sin(angle);
+                return { hit: true, dx: res.dx * cosB - res.dy * sinB, dy: res.dx * sinB + res.dy * cosB };
+            }
+            return { hit: false };
+        }
+
+        class Obstacle {
+            constructor(type, y, cx) {
+                this.type = type; 
+                this.y = y;
+                this.h = 25; // 기본 두께 감소 (기존 40 -> 25)
+                
+                // Types: 0=왼쪽벽, 1=오른쪽벽, 2=중앙벽, 3=움직이는벽, 4=회전판, 5=통행불가구역(구덩이)
+                this.cx = cx; // 트랙 중앙 X좌표
+                this.w = 0;
+                this.x = 0;
+                
+                this.angle = 0;
+                this.rotSpeed = 0;
+                this.moveDir = 1;
+                this.speed = 2;
+                
+                const maxW = 200; // 트랙(500)에서 장애물 최대 폭 대폭 감소 (기존 340 -> 200)
+                
+                if (type === 0) {
+                    this.w = 50 + Math.random() * (maxW - 50);
+                    this.x = cx - TRACK_WIDTH/2;
+                } else if (type === 1) {
+                    this.w = 50 + Math.random() * (maxW - 50);
+                    this.x = cx + TRACK_WIDTH/2 - this.w;
+                } else if (type === 2) {
+                    this.w = 50 + Math.random() * (maxW - 80);
+                    this.x = cx - this.w/2;
+                } else if (type === 3) {
+                    this.w = 80; // 움직이는 벽 크기 감소
+                    this.x = cx - TRACK_WIDTH/2;
+                    this.speed = 2 + Math.random() * 2;
+                } else if (type === 4) {
+                    this.w = 160; // 회전 반경 고려한 길이 감소
+                    this.x = cx;
+                    this.y = y + 20; 
+                    this.rotSpeed = (Math.random() > 0.5 ? 1 : -1) * (0.02 + Math.random() * 0.03);
+                } else if (type === 5) { 
+                    this.w = 80 + Math.random() * (maxW - 50);
+                    let align = Math.floor(Math.random() * 3);
+                    if (align === 0) this.x = cx - TRACK_WIDTH/2;
+                    else if (align === 1) this.x = cx + TRACK_WIDTH/2 - this.w;
+                    else this.x = cx - this.w/2;
+                    this.h = 40; // 구덩이는 두께 40으로 축소
+                }
+            }
+            
+            update() {
+                if (this.type === 3) { // 움직이는 벽 로직
+                    this.x += this.speed * this.moveDir;
+                    if (this.x < this.cx - TRACK_WIDTH/2) { this.x = this.cx - TRACK_WIDTH/2; this.moveDir = 1; }
+                    if (this.x + this.w > this.cx + TRACK_WIDTH/2) { this.x = this.cx + TRACK_WIDTH/2 - this.w; this.moveDir = -1; }
+                } else if (this.type === 4) { // 회전판 로직
+                    this.angle += this.rotSpeed;
+                }
+            }
+            
+            draw(ctx, camY) {
+                const drawY = this.y - camY;
+                if (drawY > canvas.height + 100 || drawY < -100) return; // 화면 밖 렌더링 최적화
+                
+                ctx.save();
+                if (this.type === 5) {
+                    // 통행 불가 구역 (구덩이)
+                    ctx.fillStyle = '#0a0a0c'; // 바닥과 동일한 색으로 뚫린 듯한 효과
+                    ctx.fillRect(this.x, drawY, this.w, this.h);
+                    ctx.fillStyle = 'rgba(0,0,0,0.8)'; // 깊이감을 위한 내부 그림자
+                    ctx.fillRect(this.x, drawY, this.w, 10);
+                    ctx.fillRect(this.x, drawY, 10, this.h);
+                    ctx.strokeStyle = '#1e1a17';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(this.x, drawY, this.w, this.h);
+                } else if (this.type === 4) {
+                    // 회전판
+                    ctx.translate(this.x, drawY);
+                    ctx.rotate(this.angle);
+                    ctx.fillStyle = '#5a3a29';
+                    ctx.fillRect(-this.w/2, -this.h/2, this.w, this.h);
+                    ctx.strokeStyle = '#382216';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(-this.w/2, -this.h/2, this.w, this.h);
+                    // 중심축
+                    ctx.fillStyle = '#aaa';
+                    ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+                } else {
+                    // 일반 벽 & 움직이는 벽
+                    ctx.fillStyle = this.type === 3 ? '#4b5563' : '#374151';
+                    ctx.fillRect(this.x, drawY, this.w, this.h);
+                    ctx.strokeStyle = '#1f2937';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(this.x, drawY, this.w, this.h);
+                    
+                    // 움직이는 벽의 경고 패턴
+                    if (this.type === 3) {
+                        ctx.fillStyle = 'rgba(245, 158, 11, 0.4)';
+                        for(let i=0; i<this.w; i+=20) {
+                            ctx.beginPath();
+                            ctx.moveTo(this.x + i, drawY);
+                            ctx.lineTo(this.x + i + 10, drawY);
+                            ctx.lineTo(this.x + i, drawY + this.h);
+                            ctx.lineTo(this.x + i - 10, drawY + this.h);
+                            ctx.fill();
+                        }
+                    }
+                }
+                ctx.restore();
+            }
+            
+            collide(entity) {
+                if (this.type === 4) {
+                    return resolveCircleOBB(entity.x, entity.y, entity.r, this.x, this.y, this.w, this.h, this.angle);
+                } else {
+                    return resolveCircleAABB(entity.x, entity.y, entity.r, this.x, this.y, this.w, this.h);
+                }
+            }
+        }
+
+        class Player {
+            constructor() {
+                this.r = 18;
+                this.x = 0;
+                this.y = 0;
+                this.speed = 3.5; // 이동 속도 감소 (5 -> 3.5)
+                this.facing = { dx: 0, dy: -1 }; // Default UP
+                this.isGrabbing = false;
+                this.grabOffset = { x: 0, y: 0 };
+                this.slipTimer = 0;
+                this.maxSlipTime = 90; // 90 frames (~1.5s)
+                this.attackCooldown = 0;
+                this.maxAttackCooldown = 60; // 60 frames (~1s)
+                this.color = '#e2a36b'; // Skin tone
+                this.grabDisabledTimer = 0;
+            }
+
+            reset(startX, startY) {
+                this.x = startX;
+                this.y = startY;
+                this.isGrabbing = false;
+                this.slipTimer = 0;
+                this.attackCooldown = 0;
+                this.grabDisabledTimer = 0;
+                this.facing = { dx: 0, dy: -1 };
+            }
+
+            update() {
+                // Cooldowns
+                if (this.attackCooldown > 0) this.attackCooldown--;
+                if (this.grabDisabledTimer > 0) this.grabDisabledTimer--;
+
+                attackCdUi.style.display = (this.attackCooldown === 0) ? 'block' : 'none';
+
+                // Determine movement intent
+                let dx = 0; let dy = 0;
+                if (keys.ArrowUp) dy -= 1;
+                if (keys.ArrowDown) dy += 1;
+                if (keys.ArrowLeft) dx -= 1;
+                if (keys.ArrowRight) dx += 1;
+
+                // Normalize and set facing
+                if (dx !== 0 || dy !== 0) {
+                    const len = Math.hypot(dx, dy);
+                    dx /= len; dy /= len;
+                    this.facing = { dx, dy };
+                }
+
+                // Check Grab Logic with Boulder
+                let grabAttempt = keys.Space && this.grabDisabledTimer === 0;
+                let currentDist = Math.hypot(boulder.x - this.x, boulder.y - this.y);
+                let canReach = currentDist < this.r + boulder.r + 15;
+
+                if (grabAttempt && canReach) {
+                    if (!this.isGrabbing) {
+                        // Init Grab
+                        this.isGrabbing = true;
+                        this.grabOffset = { x: boulder.x - this.x, y: boulder.y - this.y };
+                    }
+                } else {
+                    this.isGrabbing = false;
+                    this.slipTimer = 0;
+                }
+
+                // Slip logic & Diagonal Correction
+                if (this.isGrabbing) {
+                    let angle = Math.atan2(this.grabOffset.y, this.grabOffset.x);
+                    // Secure if angle is pointing UP (boulder is above player)
+                    let isSecure = (angle > -3*Math.PI/4 && angle < -Math.PI/4);
+                    
+                    if (!isSecure) {
+                        this.slipTimer++;
+                        if (this.slipTimer > this.maxSlipTime) {
+                            // Force break grab!
+                            this.isGrabbing = false;
+                            this.grabDisabledTimer = 60; // 1 second penalty
+                            this.slipTimer = 0;
+                            createParticles(this.x, this.y, 15, '#ff4444', 4);
+                            // Slight push back
+                            boulder.vy += 2;
+                        }
+                    } else {
+                        // 안전 구역으로 들어오면 미끄러짐 타이머 초기화
+                        this.slipTimer = 0;
+                    }
+
+                    // 보정 시스템 활성화: 캐릭터 위(정중앙, -90도) 기준으로 -60도 ~ 60도일 때만 작동
+                    // Math.atan2에서 위쪽은 -90도이므로, 활성화 범위는 -150도(-5π/6) ~ -30도(-π/6)
+                    let minAngle = -150 * (Math.PI / 180);
+                    let maxAngle = -30 * (Math.PI / 180);
+
+                    if (this.isGrabbing && angle >= minAngle && angle <= maxAngle) {
+                        // 대각선 보정 (Diagonal Correction)
+                        // 돌을 중앙(캐릭터 바로 위)으로 천천히 이동시킴
+                        const idealOffsetX = 0;
+                        const idealOffsetY = -(this.r + boulder.r - 2);
+                        
+                        // 보정 속도 0.015
+                        this.grabOffset.x += (idealOffsetX - this.grabOffset.x) * 0.015;
+                        this.grabOffset.y += (idealOffsetY - this.grabOffset.y) * 0.015;
+                    }
+                }
+
+                // Movement Execution
+                let moveSpeed = this.isGrabbing ? this.speed * 0.4 : this.speed;
+                this.x += dx * moveSpeed;
+                this.y += dy * moveSpeed;
+
+                // Wall Collision for Player
+                let trackLeft = canvas.width/2 - TRACK_WIDTH/2 + this.r;
+                let trackRight = canvas.width/2 + TRACK_WIDTH/2 - this.r;
+                this.x = Math.max(trackLeft, Math.min(trackRight, this.x));
+
+                // 장애물 충돌 처리 (플레이어)
+                for (let obs of obstacles) {
+                    let res = obs.collide(this);
+                    if (res.hit) {
+                        this.x += res.dx;
+                        this.y += res.dy;
+                    }
+                }
+
+                // Force boulder position if grabbed
+                if (this.isGrabbing) {
+                    let targetBx = this.x + this.grabOffset.x;
+                    let targetBy = this.y + this.grabOffset.y;
+                    
+                    // Boundary check for grabbed boulder
+                    let bTrackLeft = canvas.width/2 - TRACK_WIDTH/2 + boulder.r;
+                    let bTrackRight = canvas.width/2 + TRACK_WIDTH/2 - boulder.r;
+                    
+                    if (targetBx < bTrackLeft) { targetBx = bTrackLeft; this.x = targetBx - this.grabOffset.x; }
+                    if (targetBx > bTrackRight) { targetBx = bTrackRight; this.x = targetBx - this.grabOffset.x; }
+                    
+                    boulder.x = targetBx;
+                    boulder.y = targetBy;
+                    boulder.vx = 0;
+                    boulder.vy = 0;
+                } else {
+                    // Player colliding with boulder without grabbing (blocks or gets pushed)
+                    let dist = Math.hypot(boulder.x - this.x, boulder.y - this.y);
+                    if (dist < this.r + boulder.r) {
+                        let overlap = this.r + boulder.r - dist;
+                        let nx = (this.x - boulder.x) / dist;
+                        let ny = (this.y - boulder.y) / dist;
+                        
+                        if (ny > 0.2) {
+                            // 돌 아래에 캐릭터가 있으면 캐릭터가 밀리지 않고 돌을 든든하게 받침
+                            boulder.x -= nx * overlap;
+                            boulder.y -= ny * overlap;
+                            if (boulder.vy > 0) boulder.vy = 0;
+                        } else {
+                            // 옆이나 위에 있을 때는 캐릭터가 밀림
+                            this.x += nx * overlap;
+                            this.y += ny * overlap;
+                        }
+                    }
+                }
+
+                // Attack Logic (Z Key)
+                if (keys.z && this.attackCooldown === 0) {
+                    this.attackCooldown = this.maxAttackCooldown;
+                    this.isGrabbing = false;
+                    
+                    // Attack hitbox check (extends in facing direction)
+                    let hx = this.x + this.facing.dx * 30;
+                    let hy = this.y + this.facing.dy * 30;
+                    let distToB = Math.hypot(boulder.x - hx, boulder.y - hy);
+                    
+                    if (distToB < boulder.r + 20) {
+                        // HIT! (공격력 조금 증가)
+                        boulder.vx = this.facing.dx * 4;
+                        boulder.vy = (this.facing.dy < 0) ? -5 : this.facing.dy * 4; 
+                        createParticles(boulder.x, boulder.y + boulder.r/2, 20, '#ffffff', 6);
+                        
+                        // Break grab penalty if hitting
+                        this.grabDisabledTimer = 30;
+                    }
+                    // Visual slash effect
+                    createParticles(hx, hy, 10, '#ffff00', 3);
+                }
+            }
+
+            draw(ctx, camY) {
+                const drawY = this.y - camY;
+
+                // Draw slip warning bar
+                if (this.slipTimer > 0) {
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(this.x - 20, drawY - 35, 40, 6);
+                    let ratio = this.slipTimer / this.maxSlipTime;
+                    ctx.fillStyle = ratio > 0.7 ? '#ff0000' : '#ffff00';
+                    ctx.fillRect(this.x - 20, drawY - 35, 40 * ratio, 6);
+                }
+
+                // Body shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.beginPath();
+                ctx.ellipse(this.x, drawY + this.r, this.r, this.r/2, 0, 0, Math.PI*2);
+                ctx.fill();
+
+                // Player Body
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, drawY, this.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#8a5c34';
+                ctx.stroke();
+
+                // Facing indicator (Head/Bandana or Eye direction)
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(this.x + this.facing.dx * 8, drawY + this.facing.dy * 8, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Arms reaching out if grabbing
+                if (this.isGrabbing) {
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = 6;
+                    ctx.beginPath();
+                    ctx.moveTo(this.x, drawY);
+                    ctx.lineTo(this.x + this.grabOffset.x * 0.5, drawY + this.grabOffset.y * 0.5);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        class Boulder {
+            constructor() {
+                this.r = 45;
+                this.x = 0;
+                this.y = 0;
+                this.vx = 0;
+                this.vy = 0;
+                this.friction = 0.96;
+                this.rotation = 0;
+            }
+
+            reset(startX, startY) {
+                this.x = startX;
+                this.y = startY;
+                this.vx = 0;
+                this.vy = 0;
+                this.rotation = 0;
+            }
+
+            update() {
+                if (!player.isGrabbing) {
+                    // Apply Gravity
+                    this.vy += GRAVITY;
+                    if (this.vy > MAX_FALL_SPEED) this.vy = MAX_FALL_SPEED;
+
+                    this.vx *= this.friction;
+                    
+                    this.x += this.vx;
+                    this.y += this.vy;
+
+                    // Fake rotation based on movement
+                    this.rotation += (this.vx * 0.05) + (this.vy * 0.02);
+
+                    // Track boundaries
+                    let trackLeft = canvas.width/2 - TRACK_WIDTH/2 + this.r;
+                    let trackRight = canvas.width/2 + TRACK_WIDTH/2 - this.r;
+                    
+                    if (this.x < trackLeft) {
+                        this.x = trackLeft;
+                        this.vx *= -0.15; // Bounce (둔탁하게 튀기게 감소)
+                    }
+                    if (this.x > trackRight) {
+                        this.x = trackRight;
+                        this.vx *= -0.15; // Bounce (둔탁하게 튀기게 감소)
+                    }
+                }
+
+                // 장애물 충돌 처리 (돌)
+                for (let obs of obstacles) {
+                    let res = obs.collide(this);
+                    if (res.hit) {
+                        // 돌 밀려남 적용
+                        this.x += res.dx;
+                        this.y += res.dy;
+                        
+                        if (!player.isGrabbing) {
+                            // 움직이는 물체에 맞으면 속도 전달 및 튕김
+                            if (obs.type === 3) this.vx += obs.moveDir * obs.speed * 0.3;
+                            if (res.dy < 0 && this.vy > 0) this.vy *= -0.15; // 바닥 충돌 시 둔탁하게
+                            if (res.dx !== 0) this.vx *= -0.15; // 벽 충돌 시 둔탁하게
+                        } else {
+                            // 플레이어가 잡고 있는 상태에서 돌이 장애물에 꽉 끼면 (거리가 멀어지면) 강제로 놓침!
+                            let distToPlayer = Math.hypot(this.x - player.x, this.y - player.y);
+                            if (distToPlayer > this.r + player.r + 25) {
+                                player.isGrabbing = false;
+                                player.grabDisabledTimer = 60; // 페널티
+                                player.slipTimer = 0;
+                                createParticles(this.x, this.y, 15, '#ff4444', 4);
+                            }
+                        }
+                    }
+                }
+            }
+
+            draw(ctx, camY) {
+                const drawY = this.y - camY;
+                
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.beginPath();
+                ctx.ellipse(this.x, drawY + this.r - 5, this.r + 5, this.r/2 + 2, 0, 0, Math.PI*2);
+                ctx.fill();
+
+                // Main Rock
+                ctx.save();
+                ctx.translate(this.x, drawY);
+                ctx.rotate(this.rotation);
+
+                // Gradient for 3D sphere look
+                let grad = ctx.createRadialGradient(-15, -15, 5, 0, 0, this.r);
+                grad.addColorStop(0, '#9ca3af');
+                grad.addColorStop(0.7, '#4b5563');
+                grad.addColorStop(1, '#1f2937');
+                
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.r, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Texture lines/craters
+                ctx.strokeStyle = '#374151';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(-10, -10, 10, 0, Math.PI);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(20, 10, 8, 0, Math.PI * 1.5);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(-5, 25, 12, 1, 4);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        const player = new Player();
+        const boulder = new Boulder();
+        let highestPointY = 0; // Tracks the absolute highest (lowest Y value) reached
+
+        function drawBackground() {
+            // Fill dark void
+            ctx.fillStyle = '#0a0a0c';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Mountain Track
+            const left = canvas.width/2 - TRACK_WIDTH/2;
+            
+            // Track base
+            ctx.fillStyle = '#2c2723';
+            ctx.fillRect(left, 0, TRACK_WIDTH, canvas.height);
+
+            // Grid / Texture lines moving with camera
+            ctx.strokeStyle = '#1e1a17';
+            ctx.lineWidth = 2;
+            
+            // Vertical track borders
+            ctx.strokeStyle = '#5a4d41';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(left, 0); ctx.lineTo(left, canvas.height);
+            ctx.moveTo(left + TRACK_WIDTH, 0); ctx.lineTo(left + TRACK_WIDTH, canvas.height);
+            ctx.stroke();
+
+            // Distance Markers (Horizontal lines every 10m / 100px)
+            ctx.fillStyle = '#5a4d41';
+            ctx.font = '14px "Press Start 2P"';
+            ctx.textAlign = 'left';
+            
+            const startMod = cameraY % 100;
+            for (let y = -startMod; y < canvas.height; y += 100) {
+                ctx.beginPath();
+                ctx.moveTo(left, y);
+                ctx.lineTo(left + TRACK_WIDTH, y);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+                ctx.stroke();
+
+                // Absolute Y position in world
+                const worldY = cameraY + y;
+                // Since start is at Y=1000, height = (1000 - worldY) / 10
+                if (worldY % 500 === 0) { // Every 50m label
+                    let h = Math.round((1000 - worldY) / PIXELS_PER_METER);
+                    if (h >= 0) {
+                        ctx.fillText(`${h}m`, left + 15, y - 5);
+                    }
+                }
+            }
+        }
+
+        function update(time) {
+            if (gameState !== 'PLAYING') return;
+
+            // Physics Update
+            player.update();
+            boulder.update();
+
+            // Camera Logic: Follow player, but look slightly ahead (UP)
+            let targetCamY = player.y - canvas.height * 0.6;
+            // Smooth camera
+            cameraY += (targetCamY - cameraY) * 0.1;
+
+            // 카메라가 올라갈 때 새로운 장애물 청크(Chunk) 생성
+            while (cameraY < nextSpawnY + 1000) {
+                let y = nextSpawnY;
+                let typeIndex = Math.random();
+                let type = 0; 
+                
+                // 확률적으로 다양한 장애물 배치
+                if (typeIndex < 0.2) type = 0;       // 왼쪽 벽
+                else if (typeIndex < 0.4) type = 1;  // 오른쪽 벽
+                else if (typeIndex < 0.55) type = 2; // 중앙 벽
+                else if (typeIndex < 0.7) type = 3;  // 움직이는 벽
+                else if (typeIndex < 0.85) type = 4; // 회전판
+                else type = 5;                       // 통행 불가 구역 (구덩이)
+                
+                obstacles.push(new Obstacle(type, y, canvas.width/2));
+                
+                // 다음 장애물 생성 위치 갱신 (간격을 크게 줄여 많이 등장하게 함)
+                nextSpawnY -= (150 + Math.random() * 120); 
+            }
+            
+            // 장애물 업데이트 및 화면 밖 삭제(메모리 누수 방지)
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.update();
+                if (obs.y > cameraY + canvas.height + 500) {
+                    obstacles.splice(i, 1);
+                }
+            }
+
+            // Calculate current height (meters)
+            // Start line is at Y = 1000
+            const START_Y = 1000;
+            // We use boulder.y to calculate score so player must push it
+            let currentMeters = Math.max(0, Math.floor((START_Y - boulder.y) / PIXELS_PER_METER));
+            
+            if (currentMeters > score) {
+                score = currentMeters;
+                hudScore.innerText = score + 'm';
+            }
+
+            // Win Condition (Challenge Mode)
+            if (currentMode === 'CHALLENGE' && score >= targetHeight) {
+                triggerGameOver(true);
+            }
+
+            // Lose Condition (Boulder falls way off screen)
+            if (boulder.y > cameraY + canvas.height + 100) {
+                triggerGameOver(false);
+            }
+
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) particles.splice(i, 1);
+            }
+        }
+
+        function draw() {
+            if (gameState === 'MENU') return;
+
+            // Render world
+            drawBackground();
+            
+            // Draw particles behind
+            particles.forEach(p => p.draw(ctx, cameraY));
+
+            // 장애물 렌더링
+            obstacles.forEach(obs => obs.draw(ctx, cameraY));
+
+            // Draw Entities
+            // Sort by Y to draw correctly overlapping
+            if (player.y < boulder.y) {
+                player.draw(ctx, cameraY);
+                boulder.draw(ctx, cameraY);
+            } else {
+                boulder.draw(ctx, cameraY);
+                player.draw(ctx, cameraY);
+            }
+
+            // Draw start/finish lines
+            const drawLine = (worldY, text, color) => {
+                const screenY = worldY - cameraY;
+                if (screenY > -50 && screenY < canvas.height + 50) {
+                    ctx.fillStyle = color;
+                    ctx.fillRect(canvas.width/2 - TRACK_WIDTH/2, screenY, TRACK_WIDTH, 10);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '20px "Press Start 2P"';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(text, canvas.width/2, screenY - 10);
+                }
+            };
+            
+            drawLine(1000, "START", "rgba(0, 255, 0, 0.5)");
+            if (currentMode === 'CHALLENGE') {
+                const targetWorldY = 1000 - (targetHeight * PIXELS_PER_METER);
+                drawLine(targetWorldY, "FINISH", "rgba(255, 0, 0, 0.8)");
+            }
+        }
+
+        function gameLoop(time) {
+            update(time);
+            draw();
+            animationId = requestAnimationFrame(gameLoop);
+        }
+
+        function startGame(mode, target) {
+            currentMode = mode;
+            targetHeight = target;
+            score = 0;
+            particles = [];
+            
+            obstacles = []; // 장애물 초기화
+            const START_Y = 1000;
+            nextSpawnY = START_Y - 400; // 첫 번째 장애물은 스타트라인 살짝 위에 배치
+            
+            player.reset(canvas.width/2, START_Y - 50);
+            boulder.reset(canvas.width/2, START_Y - 100);
+            cameraY = player.y - canvas.height/2;
+
+            uiMainMenu.classList.add('hidden');
+            uiEndMenu.classList.add('hidden');
+            uiHud.classList.remove('hidden');
+
+            hudScore.innerText = '0m';
+            if (mode === 'CHALLENGE') {
+                hudTargetLabel.innerText = '목표 높이';
+                hudTarget.innerText = targetHeight + 'm';
+            } else {
+                hudTargetLabel.innerText = '최고 기록';
+                // Load best score from local storage if possible, mock for now
+                let best = localStorage.getItem('sisyphusBest') || 0;
+                hudTarget.innerText = best + 'm';
+            }
+
+            gameState = 'PLAYING';
+            if (!animationId) {
+                animationId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        function triggerGameOver(isWin) {
+            gameState = isWin ? 'VICTORY' : 'GAMEOVER';
+            uiHud.classList.add('hidden');
+            uiEndMenu.classList.remove('hidden');
+            
+            const title = document.getElementById('end-title');
+            const desc = document.getElementById('end-desc');
+            const endScore = document.getElementById('end-score');
+
+            endScore.innerText = score;
+
+            if (isWin) {
+                title.innerText = 'VICTORY!';
+                title.className = 'title-text text-4xl mb-4 text-green-400';
+                desc.innerText = '정상에 도달했습니다! 당신은 운명을 극복했습니다.';
+            } else {
+                title.innerText = 'GAME OVER';
+                title.className = 'title-text text-4xl mb-4 text-red-500';
+                desc.innerText = '돌이 굴러떨어졌습니다... 형벌은 계속됩니다.';
+            }
+
+            if (currentMode === 'ENDLESS') {
+                let best = parseInt(localStorage.getItem('sisyphusBest') || 0);
+                if (score > best) {
+                    localStorage.setItem('sisyphusBest', score);
+                    desc.innerText += '\n최고 기록 경신!';
+                }
+            }
+        }
+
+        function retryGame() {
+            startGame(currentMode, targetHeight);
+        }
+
+        function returnToMenu() {
+            uiEndMenu.classList.add('hidden');
+            uiMainMenu.classList.remove('hidden');
+            gameState = 'MENU';
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // clear canvas behind menu
+        }
+
+        // Draw initial menu background setup
+        ctx.fillStyle = '#0a0a0c';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    </script>
+</body>
+</html>
